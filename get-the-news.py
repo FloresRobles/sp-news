@@ -1,8 +1,10 @@
+import requests
+import os
 import spotipy
 import spotipy.util as util
 
 # https://open.spotify.com/user/floresrobles/playlist/3Kz9W3n6zGkHVBtoGU9mwI
-playlistID = "3Kz9W3n6zGkHVBtoGU9mwI"
+playlist_id = "3Kz9W3n6zGkHVBtoGU9mwI"
 username = "floresrobles"
 max_tracks_on_playlist = 400
 
@@ -45,6 +47,16 @@ def filter_tracks(sp, full_albums):
         tracks.extend(album["tracks"]["items"])
     return tracks
 
+def get_playlist(sp, playlist_id):
+    results = sp.user_playlist(username, playlist_id, fields="tracks,next")
+    tracks = results['tracks']
+    items = tracks["items"]
+    while tracks['next']:
+        tracks = sp.next(tracks)
+        items.extend(tracks["items"])
+    return items
+
+
 def set_tracks(sp, tracks, playlist_id):
     sp.user_playlist_replace_tracks(username, playlist_id, [track["uri"] for track in tracks[0:max_tracks_per_call]])
     for start in range(max_tracks_per_call, max_tracks_on_playlist, max_tracks_per_call):
@@ -58,7 +70,15 @@ if token:
     albums = fetch_albums(sp, artists, 'album,single')
     full_albums = fetch_full_albums(sp, albums)
     ordered_albums = order_albums(full_albums)
-    tracks = filter_tracks(sp, ordered_albums)
-    set_tracks(sp, tracks, playlistID)
+    tracks = filter_tracks(sp, ordered_albums)[:max_tracks_on_playlist]
+    old_tracks = get_playlist(sp, playlist_id)
+    old_tracks_ids = [track["track"]["id"] for track in old_tracks]
+    tracks_ids = [track["id"] for track in tracks]
+    new_tracks_number = len([val for val in tracks_ids if val not in old_tracks_ids])
+    if new_tracks_number > 0:
+        ifttt_url = os.environ.get('IFTTT_URL')
+        if ifttt_url is not None:
+            requests.post(ifttt_url, data={"value1":new_tracks_number})
+        set_tracks(sp, tracks, playlist_id)
 else:
     print("Can't get token for", username)
