@@ -1,12 +1,14 @@
-import requests
+#!/usr/bin/env python3
+
 import os
 import spotipy
 import spotipy.util as util
+import telegram
 
-# https://open.spotify.com/user/floresrobles/playlist/3Kz9W3n6zGkHVBtoGU9mwI
 playlist_id = "3Kz9W3n6zGkHVBtoGU9mwI"
 username = "floresrobles"
 max_tracks_on_playlist = 400
+country = "FR" 
 
 scope = 'playlist-modify-public'
 max_albums_per_call = 20
@@ -23,7 +25,7 @@ def fetch_followed_artists(sp):
 def fetch_albums(sp, artists, type):
     albums = []
     for artist in artists:
-        response = sp.artist_albums(artist['id'], album_type=type, country="US")
+        response = sp.artist_albums(artist['id'], album_type=type, country=country)
         while response:
             albums.extend(response["items"])
             response = sp.next(response)
@@ -56,15 +58,15 @@ def get_playlist(sp, playlist_id):
         items.extend(tracks["items"])
     return items
 
-
 def set_tracks(sp, tracks, playlist_id):
     sp.user_playlist_replace_tracks(username, playlist_id, [track["uri"] for track in tracks[0:max_tracks_per_call]])
     for start in range(max_tracks_per_call, max_tracks_on_playlist, max_tracks_per_call):
         sp.user_playlist_add_tracks(username, playlist_id, [track["uri"] for track in tracks[start:start + max_tracks_per_call]])
 
-token = util.prompt_for_user_token(username, scope = scope)
+def get_news():
+  token = util.prompt_for_user_token(username, scope = scope)
 
-if token:
+  if token:
     sp = spotipy.Spotify(auth=token)
     artists = fetch_followed_artists(sp)
     albums = fetch_albums(sp, artists, 'album,single')
@@ -74,11 +76,14 @@ if token:
     old_tracks = get_playlist(sp, playlist_id)
     old_tracks_ids = [track["track"]["id"] for track in old_tracks]
     tracks_ids = [track["id"] for track in tracks]
-    new_tracks_number = len([val for val in tracks_ids if val not in old_tracks_ids])
-    if new_tracks_number > 0:
-        ifttt_url = os.environ.get('IFTTT_URL')
-        if ifttt_url is not None:
-            requests.post(ifttt_url, data={"value1":new_tracks_number})
-        set_tracks(sp, tracks, playlist_id)
-else:
-    print("Can't get token for", username)
+    new_tracks_ids = [val for val in tracks_ids if val not in old_tracks_ids]
+    new_tracks = [track["artists"][0]["name"] + ", "  + track["name"] for track in tracks if track["id"] in new_tracks_ids]
+    if len(new_tracks_ids) > 0:
+      set_tracks(sp, tracks, playlist_id)
+      bot = telegram.Bot(token=os.getenv('TELEGRAM_TOKEN'))
+      bot.send_message(chat_id=os.getenv('TELEGRAM_CHAT_ID'), text="\n".join(new_tracks)[0:4095])
+
+  else:
+    print("Update token in env")
+
+get_news()
